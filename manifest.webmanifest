@@ -1,0 +1,19 @@
+{
+  "id": "./",
+  "name": "KlemmmosaikBase – Mosaik-Vorlagen für Klemmbausteine",
+  "short_name": "KlemmmosaikBase",
+  "description": "Aus einem Foto eine Mosaik-Vorlage für Klemmbausteine machen: flach oder stehend, mit Teileliste, Bauanleitung und PDF.",
+  "lang": "de",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#EEF0F2",
+  "theme_color": "#262B31",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "display_override": ["standalone"]
+}

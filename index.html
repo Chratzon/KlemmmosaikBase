@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>KlemmmosaikBase</title>
+  <meta name="description" content="Aus einem Foto eine Mosaik-Vorlage für Klemmbausteine machen: Ausschnitt wählen, flach oder stehend bauen, Teileliste, Bauanleitung und PDF.">
+  <meta name="theme-color" content="#EEF0F2" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#101418" media="(prefers-color-scheme: dark)">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <header class="bar">
+    <div class="bar-in">
+      <h1 class="brand"><span class="brand-mark" aria-hidden="true"></span>KlemmmosaikBase</h1>
+      <button class="icon-btn" id="menuBtn" aria-label="Menü" aria-expanded="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
+    </div>
+    <div class="menu" id="menu" hidden>
+      <button type="button" id="installBtn" hidden>Als App installieren</button>
+      <button type="button" id="newBtn">Neues Projekt</button>
+      <button type="button" id="aboutBtn">So funktioniert die Farbwahl</button>
+    </div>
+  </header>
+
+  <main id="main">
+    <!-- 1 Bild -->
+    <section class="page" id="page-image" data-page="image">
+      <div class="empty" id="emptyState">
+        <div class="empty-art" aria-hidden="true"></div>
+        <h2>Foto auswählen</h2>
+        <p>Wähle ein Bild, schneide den Ausschnitt zu und die App macht daraus eine Vorlage mit Teileliste und Bauanleitung. Das Bild bleibt auf deinem Gerät.</p>
+        <div class="row">
+          <label class="btn primary" for="fileInput">Bild auswählen</label>
+          <button type="button" class="btn" id="sampleBtn">Beispiel ausprobieren</button>
+        </div>
+      </div>
+      <div id="cropArea" hidden>
+        <div class="crop-wrap" id="cropWrap"><canvas id="cropCanvas"></canvas></div>
+        <p class="hint">Rahmen verschieben, an den Ecken die Größe ändern.</p>
+        <div class="group">
+          <div class="label">Seitenverhältnis</div>
+          <div class="chips" id="aspectChips" role="group" aria-label="Seitenverhältnis">
+            <button type="button" data-a="1:1">1:1</button>
+            <button type="button" data-a="4:3">4:3</button>
+            <button type="button" data-a="3:4">3:4</button>
+            <button type="button" data-a="3:2">3:2</button>
+            <button type="button" data-a="2:3">2:3</button>
+            <button type="button" data-a="free">Frei</button>
+          </div>
+        </div>
+        <div class="group">
+          <div class="label">Bild anpassen</div>
+          <label class="slider" for="brightness"><span>Helligkeit</span><input type="range" id="brightness" min="-50" max="50" value="0"><output id="brightnessOut">0</output></label>
+          <label class="slider" for="contrast"><span>Kontrast</span><input type="range" id="contrast" min="-50" max="80" value="0"><output id="contrastOut">0</output></label>
+          <label class="slider" for="saturation"><span>Sättigung</span><input type="range" id="saturation" min="-100" max="100" value="0"><output id="saturationOut">0</output></label>
+        </div>
+        <div class="row">
+          <label class="btn" for="fileInput">Anderes Bild</label>
+          <button type="button" class="btn primary" data-goto="mosaic">Weiter zum Mosaik</button>
+        </div>
+      </div>
+      <input type="file" id="fileInput" accept="image/*" hidden>
+    </section>
+
+    <!-- 2 Mosaik -->
+    <section class="page" id="page-mosaic" data-page="mosaic" hidden>
+      <div class="need-img" hidden><p>Noch kein Bild gewählt.</p><button type="button" class="btn primary" data-goto="image">Bild wählen</button></div>
+      <div class="has-img">
+        <div class="stats" id="stats"></div>
+        <div class="board" id="board"><canvas id="mosaicCanvas"></canvas></div>
+        <div class="edit-bar" id="editBar" hidden>
+          <div class="brush" id="brushSwatches" role="group" aria-label="Pinselfarbe"></div>
+          <div class="row tight">
+            <button type="button" class="btn small" id="pickBtn" aria-pressed="false">Pipette</button>
+            <button type="button" class="btn small" id="undoBtn">Rückgängig</button>
+            <button type="button" class="btn small" id="clearEditsBtn">Alle Änderungen verwerfen</button>
+          </div>
+        </div>
+        <div class="row tight">
+          <button type="button" class="btn small" id="editToggle" aria-pressed="false">Einzelne Steine ändern</button>
+          <button type="button" class="btn small" id="jointsToggle" aria-pressed="true">Teilefugen zeigen</button>
+        </div>
+
+        <div class="group">
+          <div class="label">Bauweise</div>
+          <div class="seg" role="group" aria-label="Bauweise">
+            <button type="button" data-mode="flat"><b>Flach</b><small>Noppen zeigen nach vorn, 8 × 8 mm je Punkt</small></button>
+            <button type="button" data-mode="side"><b>Stehend</b><small>Platten liegend gestapelt, 8 × 3,2 mm je Punkt</small></button>
+          </div>
+        </div>
+
+        <div class="group">
+          <div class="label">Breite</div>
+          <div class="width-row">
+            <label class="num" for="widthInput"><input type="number" id="widthInput" min="8" max="128" step="1" inputmode="numeric"><span>Noppen</span></label>
+            <span class="cm" id="cmOut"></span>
+          </div>
+          <div class="chips" id="widthChips">
+            <button type="button" data-w="16">16</button>
+            <button type="button" data-w="32">32</button>
+            <button type="button" data-w="37">37 · 30 cm</button>
+            <button type="button" data-w="48">48</button>
+            <button type="button" data-w="64">64</button>
+          </div>
+        </div>
+
+        <div class="group" id="partGroup">
+          <div class="label">Teile</div>
+          <select id="partSelect">
+            <option value="round">1×1 runde Platten</option>
+            <option value="roundtile">1×1 runde Fliesen</option>
+            <option value="tile">Fliesen, glatt</option>
+            <option value="plate">Platten mit Noppen</option>
+          </select>
+          <label class="switch" for="optimize"><input type="checkbox" id="optimize"><span>Größere Teile verwenden, wo die Farbe gleich bleibt</span></label>
+        </div>
+
+        <div class="group">
+          <div class="label">Farben</div>
+          <label class="slider" for="maxColors"><span>Höchstens</span><input type="range" id="maxColors" min="2" max="41" value="41"><output id="maxColorsOut">alle</output></label>
+          <label class="slider" for="dither"><span>Farbmischung</span><input type="range" id="dither" min="0" max="100" value="0"><output id="ditherOut">aus</output></label>
+          <p class="hint">Farbmischung streut Farbunterschiede auf Nachbarsteine. Verläufe werden weicher, Flächen unruhiger.</p>
+          <div class="row tight">
+            <button type="button" class="btn small" id="palBasic">Gängige Farben</button>
+            <button type="button" class="btn small" id="palAll">Alle</button>
+            <button type="button" class="btn small" id="palUsed">Nur verwendete</button>
+          </div>
+          <div class="palette" id="palette" role="group" aria-label="Verfügbare Farben"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3 Teile -->
+    <section class="page" id="page-parts" data-page="parts" hidden>
+      <div class="need-img" hidden><p>Noch kein Bild gewählt.</p><button type="button" class="btn primary" data-goto="image">Bild wählen</button></div>
+      <div class="has-img">
+        <div class="parts-head">
+          <h2>Teileliste</h2>
+          <label class="inline" for="reserve">Reserve
+            <select id="reserve"><option value="0">0 %</option><option value="5">5 %</option><option value="10" selected>10 %</option><option value="15">15 %</option></select>
+          </label>
+        </div>
+        <div id="partsList"></div>
+        <div class="group">
+          <div class="label">Exportieren</div>
+          <div class="row">
+            <button type="button" class="btn primary" id="pdfBtn">PDF-Anleitung</button>
+            <button type="button" class="btn" id="blBtn">BrickLink-Liste</button>
+            <button type="button" class="btn" id="csvBtn">CSV</button>
+          </div>
+          <p class="hint" id="exportHint">Die BrickLink-Liste lässt sich unter „Wanted → Upload“ als XML einfügen.</p>
+          <div class="xml" id="xmlBox" hidden>
+            <textarea id="xmlText" readonly rows="6" aria-label="BrickLink-XML"></textarea>
+            <div class="row tight"><button type="button" class="btn small" id="xmlCopy">Kopieren</button><button type="button" class="btn small" id="xmlDownload">Als Datei speichern</button></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 4 Anleitung -->
+    <section class="page" id="page-steps" data-page="steps" hidden>
+      <div class="need-img" hidden><p>Noch kein Bild gewählt.</p><button type="button" class="btn primary" data-goto="image">Bild wählen</button></div>
+      <div class="has-img">
+        <div class="step-head">
+          <h2 id="stepTitle">Schritt</h2>
+          <span class="step-count" id="stepCount"></span>
+        </div>
+        <p class="hint" id="stepHint"></p>
+        <div class="board step-board" id="stepBoard"></div>
+        <div class="step-parts" id="stepParts"></div>
+        <div class="step-nav">
+          <button type="button" class="btn" id="prevStep" aria-label="Vorheriger Schritt">Zurück</button>
+          <input type="range" id="stepRange" min="1" max="1" value="1" aria-label="Schritt wählen">
+          <button type="button" class="btn primary" id="nextStep" aria-label="Nächster Schritt">Weiter</button>
+        </div>
+        <div class="overview"><div class="label">Übersicht</div><div class="board small"><canvas id="overviewCanvas"></canvas></div></div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="tabs" aria-label="Bereiche">
+    <button type="button" data-tab="image"><span class="tab-num">1</span>Bild</button>
+    <button type="button" data-tab="mosaic"><span class="tab-num">2</span>Mosaik</button>
+    <button type="button" data-tab="parts"><span class="tab-num">3</span>Teile</button>
+    <button type="button" data-tab="steps"><span class="tab-num">4</span>Anleitung</button>
+  </nav>
+
+  <div class="dialog" id="aboutDialog" hidden role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+    <div class="dialog-card">
+      <h2 id="aboutTitle">So bekommt jeder Stein seine Farbe</h2>
+      <ol>
+        <li><b>Raster:</b> Der Ausschnitt wird in so viele Felder geteilt, wie das Mosaik Punkte hat. Bei „Stehend“ sind die Felder 2,5-mal so breit wie hoch, weil eine Platte 8 mm breit und 3,2 mm hoch ist.</li>
+        <li><b>Mittelwert:</b> Alle Bildpunkte eines Feldes werden gemittelt, und zwar in linearem Licht. So wird ein fein schwarz-weiß gemustertes Feld richtig mittelgrau statt zu dunkel.</li>
+        <li><b>Nächste Steinfarbe:</b> Der Mittelwert wird mit jeder freigegebenen LEGO-Farbe verglichen. Gemessen wird mit der Formel CIEDE2000 im Lab-Farbraum, die dem menschlichen Sehen nachempfunden ist. Die Farbe mit dem kleinsten Abstand gewinnt.</li>
+        <li><b>Farbanzahl:</b> Wenn du die Farben begrenzt, fällt nacheinander die Farbe weg, deren Fehlen dem Bild am wenigsten schadet.</li>
+        <li><b>Farbmischung (optional):</b> Der Rest-Fehler eines Feldes wird auf die Nachbarn verteilt (Floyd–Steinberg). Aus der Nähe wirkt das gesprenkelt, mit Abstand entstehen Zwischentöne.</li>
+        <li><b>Von Hand:</b> Unter „Einzelne Steine ändern“ kannst du jeden Punkt selbst umfärben, zum Beispiel für Augen oder Schrift.</li>
+      </ol>
+      <p class="hint">Die Farbwerte der Steine sind Näherungen. Echte Steine wirken je nach Licht etwas anders als auf dem Bildschirm.</p>
+      <button type="button" class="btn primary" id="aboutClose">Verstanden</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+  <script src="js/palette.js"></script>
+  <script src="js/mosaic.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/install.js"></script>
+  <script src="js/render.js"></script>
+  <script src="js/export.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

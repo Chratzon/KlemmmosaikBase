@@ -98,6 +98,32 @@
       }
     }
 
+    // Originalbild halbtransparent darüber (opts.overlay = { img, crop, alpha, clip(ctx,x,y,w,h) })
+    if (opts.overlay && opts.overlay.alpha > 0) {
+      const o = opts.overlay, gx = px(0), gy = py(0), gw = model.cols * cw, gh = model.rows * ch;
+      ctx.save();
+      ctx.beginPath(); ctx.rect(gx, gy, gw, gh); ctx.clip();
+      if (o.clip) { o.clip(ctx, gx, gy, gw, gh); ctx.clip(); }
+      ctx.globalAlpha = o.alpha; ctx.imageSmoothingQuality = "high";
+      ctx.drawImage(o.img, o.crop.x, o.crop.y, o.crop.w, o.crop.h, gx, gy, gw, gh);
+      ctx.restore();
+    }
+    // Teilefugen als oberste Ebene: Umrisse jedes Teils
+    if (opts.outlines) {
+      const round = model.mode === "flat" && (model.part === "round" || model.part === "roundtile");
+      const lw = Math.max(1, Math.min(2.5, cw * 0.06));
+      for (const pass of [["rgba(0,0,0,.7)", lw + 1], ["rgba(255,255,255,.75)", Math.max(0.6, lw * 0.45)]]) {
+        ctx.strokeStyle = pass[0]; ctx.lineWidth = pass[1];
+        ctx.beginPath();
+        for (const p of model.pieces) {
+          if (!inReg(p)) continue;
+          if (round) { const cx = px(p.x) + cw / 2, cy = py(p.y) + ch / 2; ctx.moveTo(cx + cw * 0.46, cy); ctx.arc(cx, cy, cw * 0.46, 0, Math.PI * 2); }
+          else ctx.rect(px(p.x) + 0.5, py(p.y) + 0.5, p.w * cw - 1, p.h * ch - 1);
+        }
+        ctx.stroke();
+      }
+    }
+
     if (opts.labels) {
       const fs = Math.min(cw, ch) * (opts.labels === "length" ? 0.72 : 0.55);
       if (fs >= 6) {

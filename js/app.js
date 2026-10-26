@@ -12,10 +12,10 @@
     mode: "flat", width: 32, part: "round", optimize: true,
     colors: KM.COLORS.filter((c) => c.basic).map((c) => c.key),
     maxColors: 0, dither: 0, adj: { brightness: 0, contrast: 0, saturation: 0 },
-    joints: true, step: 1, reserve: 10, tab: "image"
+    joints: true, jointsTop: true, overlay: 0, step: 1, reserve: 10, tab: "image"
   };
   let S = structuredClone(DEFAULTS);
-  const st = { img: null, imgUrl: null, edits: {}, editSig: "", history: [], cells: null, mask: null, cellsKey: "", brush: "white", picking: false, editing: false, polySel: -1 };
+  const st = { img: null, imgUrl: null, edits: {}, editSig: "", history: [], cells: null, mask: null, cellsKey: "", brush: "white", picking: false, editing: false, polySel: -1, pid: null, vid: null };
   let M = null; // aktuelles Mosaik-Modell
   const view = { z: 1, ox: 0, oy: 0, fit: 1, sig: "" };
 
@@ -29,9 +29,18 @@
     if (a === "shape") return KM.SHAPES[S.shape].ratio || 1;
     const [w, h] = a.split(":").map(Number); return w / h;
   }
-  const save = debounce(() => {
-    KM.store.set("project", { settings: S, imgUrl: st.imgUrl, edits: st.edits, editSig: st.editSig }).catch(() => {});
-  }, 400);
+  /* Speichern: immer in die geöffnete Version des geöffneten Projekts */
+  const snapshot = () => structuredClone({ settings: S, edits: st.edits, editSig: st.editSig });
+  function makeThumb() {
+    if (!st.img) return null;
+    try { ensureModel(); if (!M) return null; const c = document.createElement("canvas"); KM.render.draw(c, M, { width: 120, maxHeight: 120, joints: false }); return c.toDataURL("image/jpeg", 0.8); }
+    catch (e) { return null; }
+  }
+  async function saveNow() {
+    if (!st.pid || !st.vid) return;
+    try { await KM.projects.save(st.pid, st.vid, snapshot(), makeThumb()); } catch (e) { console.error(e); }
+  }
+  const save = debounce(saveNow, 500);
 
   /* ---------- Verfügbarkeit ---------- */
   const basePart = () => (S.mode === "side" ? KM.PARTS.side : KM.PARTS[S.part]);
@@ -88,11 +97,159 @@
   $("fileInput").addEventListener("change", async (e) => {
     const f = e.target.files && e.target.files[0]; if (!f) return;
     const url = await new Promise((res) => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(f); });
-    try { st.edits = {}; await useImage(url, false); showTab("image"); }
+    try { await newProject(url, f.name.replace(/\.[^.]+$/, "") || "Mein Mosaik"); }
     catch (err) { toast("Das Bild ließ sich nicht öffnen. Bitte JPG, PNG oder WebP wählen."); }
     e.target.value = "";
   });
-  $("sampleBtn").addEventListener("click", async () => { st.edits = {}; await useImage(sampleImage(), false); });
+  $("sampleBtn").addEventListener("click", () => newProject(sampleImage(), "Beispiel Bergsee"));
+
+  /* ---------- Projekte und Versionen ---------- */
+  async function newProject(url, name) {
+    await saveNow();
+    // Bauweise, Größe, Teile und Farben bleiben wie zuletzt; Ausschnitt und Form beginnen neu
+    S = Object.assign(structuredClone(S), { crop: null, poly: null, shape: "rect", aspect: "1:1", outside: "empty", step: 1, adj: { ...DEFAULTS.adj }, overlay: 0 });
+    st.edits = {}; st.editSig = ""; st.history = []; st.pid = null; st.vid = null;
+    applySettingsToInputs();
+    await useImage(url, false);
+    const ids = await KM.projects.create(name, st.imgUrl, snapshot());
+    st.pid = ids.pid; st.vid = ids.vid;
+    $("projDialog").hidden = true;
+    await updateProjLine(); showTab("image"); save();
+    toast(`Projekt „${name}“ angelegt.`);
+  }
+  function applyData(data) {
+    S = Object.assign(structuredClone(DEFAULTS), (data && data.settings) || {});
+    S.adj = Object.assign({ ...DEFAULTS.adj }, S.adj || {});
+    S.colors = (S.colors || []).filter((k) => C[k]);
+    if (!KM.SHAPES[S.shape]) S.shape = "rect";
+    st.edits = (data && data.edits) || {}; st.editSig = (data && data.editSig) || ""; st.history = [];
+    dirty = true; applySettingsToInputs();
+  }
+  async function openProject(pid, vid) {
+    await saveNow();
+    const p = await KM.projects.get(pid); if (!p) return;
+    const has = (id) => id && p.versions.some((v) => v.id === id);
+    vid = has(vid) ? vid : has(p.lastVid) ? p.lastVid : p.versions[p.versions.length - 1].id;
+    const [url, data] = await Promise.all([KM.projects.image(pid), KM.projects.version(pid, vid)]);
+    if (!url) { toast("Das Bild dieses Projekts fehlt."); return; }
+    st.pid = null; // während des Ladens nichts speichern
+    applyData(data);
+    await useImage(url, true);
+    st.pid = pid; st.vid = vid; await KM.projects.setCurrent(pid, vid);
+    $("projDialog").hidden = true;
+    await updateProjLine(); showTab(st.img ? (S.tab || "mosaic") : "image");
+  }
+  async function openVersion(vid) {
+    if (vid === st.vid) return;
+    await saveNow();
+    const data = await KM.projects.version(st.pid, vid);
+    applyData(data); st.vid = vid; await KM.projects.setCurrent(st.pid, vid);
+    st.cellsKey = ""; view.sig = "";
+    await updateProjLine(); showTab(S.tab === "image" ? "image" : S.tab || "mosaic");
+  }
+  async function newVersion() {
+    if (!st.pid) return;
+    await saveNow();
+    const vid = await KM.projects.addVersion(st.pid, snapshot(), makeThumb());
+    st.vid = vid; st.history = [];
+    await updateProjLine(); renderPage();
+    const p = await KM.projects.get(st.pid);
+    toast(`${p.versions.find((v) => v.id === vid).name} angelegt, du arbeitest jetzt darin.`);
+  }
+  async function updateProjLine() {
+    const p = st.pid && (await KM.projects.get(st.pid));
+    $("projName").textContent = p ? p.name : "Noch kein Projekt";
+    const v = p && p.versions.find((x) => x.id === st.vid);
+    $("projVer").textContent = v ? (p.versions.length > 1 ? v.name : "") : "";
+    renderVersionChips(p);
+  }
+  function renderVersionChips(p) {
+    if (!p) { $("versionChips").innerHTML = ""; return; }
+    $("versionChips").innerHTML = p.versions.map((v) => `<button type="button" data-v="${v.id}" aria-pressed="${v.id === st.vid}">${esc(v.name)}</button>`).join("") + `<button type="button" class="add" id="addVersion">+ Neue Version</button>`;
+  }
+  $("versionChips").addEventListener("click", (e) => {
+    const b = e.target.closest("button"); if (!b) return;
+    if (b.id === "addVersion") newVersion(); else openVersion(b.dataset.v);
+  });
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const when = (t) => new Date(t).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", year: "2-digit", hour: "2-digit", minute: "2-digit" });
+
+  async function renderProjList() {
+    const list = await KM.projects.list();
+    if (!list.length) { $("projList").innerHTML = `<p class="hint">Noch keine Projekte. Wähle ein Bild, dann wird automatisch ein Projekt angelegt.</p>`; return; }
+    $("projList").innerHTML = list.map((p) => `
+      <article class="proj${p.id === st.pid ? " current" : ""}" data-p="${p.id}">
+        <div class="proj-main">
+          <div class="thumb">${p.thumb ? `<img src="${p.thumb}" alt="">` : ""}</div>
+          <div class="proj-info">
+            <div class="pn-row"><strong class="pname-t" data-act="name">${esc(p.name)}</strong>${p.id === st.pid ? '<span class="badge">geöffnet</span>' : ""}</div>
+            <small>${p.versions.length} ${p.versions.length === 1 ? "Version" : "Versionen"} · geändert ${when(p.updated)}</small>
+            <div class="row tight">
+              ${p.id === st.pid ? "" : `<button type="button" class="btn small primary" data-act="open">Öffnen</button>`}
+              <button type="button" class="btn small" data-act="rename">Umbenennen</button>
+              <button type="button" class="btn small danger" data-act="delete">Löschen</button>
+            </div>
+          </div>
+        </div>
+        <ul class="vers">${p.versions.map((v) => `
+          <li data-v="${v.id}" class="${p.id === st.pid && v.id === st.vid ? "current" : ""}">
+            <div class="thumb s">${v.thumb ? `<img src="${v.thumb}" alt="">` : ""}</div>
+            <span class="vname" data-act="vname">${esc(v.name)}</span>
+            <small>${when(v.updated)}</small>
+            <span class="vacts">
+              ${p.id === st.pid && v.id === st.vid ? '<span class="badge">aktiv</span>' : `<button type="button" class="btn small" data-act="vopen">Öffnen</button>`}
+              <button type="button" class="btn small" data-act="vrename" aria-label="Version umbenennen">Umbenennen</button>
+              ${p.versions.length > 1 ? `<button type="button" class="btn small danger" data-act="vdelete" aria-label="Version löschen">Löschen</button>` : ""}
+            </span>
+          </li>`).join("")}
+        </ul>
+        ${p.id === st.pid ? `<button type="button" class="btn small" data-act="vnew">+ Neue Version aus der aktiven</button>` : ""}
+      </article>`).join("");
+  }
+  function inlineRename(el, current, onSave) {
+    const inp = document.createElement("input"); inp.type = "text"; inp.value = current; inp.className = "rename"; inp.id = "rename-" + Date.now(); inp.setAttribute("aria-label", "Neuer Name");
+    el.replaceWith(inp); inp.focus(); inp.select();
+    let done = false;
+    const finish = async (ok) => { if (done) return; done = true; if (ok && inp.value.trim() && inp.value.trim() !== current) await onSave(inp.value.trim()); await renderProjList(); await updateProjLine(); };
+    inp.addEventListener("keydown", (e) => { if (e.key === "Enter") finish(true); if (e.key === "Escape") finish(false); });
+    inp.addEventListener("blur", () => finish(true));
+  }
+  $("projList").addEventListener("click", async (e) => {
+    const b = e.target.closest("[data-act]"); if (!b) return;
+    const art = b.closest("[data-p]"), pid = art.dataset.p, li = b.closest("[data-v]"), vid = li && li.dataset.v;
+    const act = b.dataset.act;
+    if (act === "open") openProject(pid);
+    else if (act === "rename") { const p = await KM.projects.get(pid); inlineRename(art.querySelector(".pname-t"), p.name, (n) => KM.projects.renameProject(pid, n)); }
+    else if (act === "delete") {
+      if (!b.classList.contains("confirm")) { b.classList.add("confirm"); b.textContent = "Wirklich löschen?"; return; }
+      await KM.projects.deleteProject(pid);
+      if (pid === st.pid) {
+        const rest = await KM.projects.list();
+        if (rest.length) await openProject(rest[0].id); else { resetEmpty(); }
+      }
+      toast("Projekt gelöscht."); renderProjList();
+    }
+    else if (act === "vopen") { if (pid === st.pid) await openVersion(vid); else await openProject(pid, vid); renderProjList(); }
+    else if (act === "vrename") { const p = await KM.projects.get(pid); const v = p.versions.find((x) => x.id === vid); inlineRename(li.querySelector(".vname"), v.name, (n) => KM.projects.renameVersion(pid, vid, n)); }
+    else if (act === "vdelete") {
+      if (!b.classList.contains("confirm")) { b.classList.add("confirm"); b.textContent = "Wirklich?"; return; }
+      const wasActive = pid === st.pid && vid === st.vid;
+      await KM.projects.deleteVersion(pid, vid);
+      if (wasActive) { const p = await KM.projects.get(pid); st.vid = null; await openVersion(p.versions[p.versions.length - 1].id); }
+      toast("Version gelöscht."); renderProjList(); updateProjLine();
+    }
+    else if (act === "vnew") { await newVersion(); renderProjList(); }
+  });
+  async function openProjDialog() { $("menu").hidden = true; await saveNow(); await renderProjList(); $("projDialog").hidden = false; $("projClose").focus(); }
+  $("projBtn").addEventListener("click", openProjDialog);
+  $("projMenuBtn").addEventListener("click", openProjDialog);
+  $("projClose").addEventListener("click", () => ($("projDialog").hidden = true));
+  $("projDialog").addEventListener("click", (e) => { if (e.target === $("projDialog")) $("projDialog").hidden = true; });
+  $("projSample").addEventListener("click", () => newProject(sampleImage(), "Beispiel Bergsee"));
+  function resetEmpty() {
+    S = structuredClone(DEFAULTS); st.img = null; st.imgUrl = null; st.edits = {}; st.editSig = ""; st.history = []; st.cellsKey = ""; st.pid = null; st.vid = null; M = null; dirty = true;
+    applySettingsToInputs(); updateProjLine(); showTab("image");
+  }
 
   /* Beispielbild: Abendstimmung am Bergsee, im Browser gezeichnet */
   function sampleImage() {
@@ -416,7 +573,12 @@
   function drawPreview() {
     if (!M) return;
     const { W, H, sc } = clampView();
-    geo = KM.render.draw($("mosaicCanvas"), M, { view: { W, H, scale: sc, ox: view.ox, oy: view.oy }, joints: S.joints, sections: S.mode === "flat" && (M.cols > 16 || M.rows > 16) });
+    const alpha = (S.overlay || 0) / 100, sp = S.shape === "rect" ? null : shapePathFn();
+    geo = KM.render.draw($("mosaicCanvas"), M, {
+      view: { W, H, scale: sc, ox: view.ox, oy: view.oy }, joints: S.joints, sections: S.mode === "flat" && (M.cols > 16 || M.rows > 16),
+      overlay: alpha > 0 ? { img: st.img, crop: S.crop, alpha, clip: sp && S.outside === "empty" ? (c, x, y, w, h) => sp(c, x, y, w, h) : null } : null,
+      outlines: alpha > 0 && S.joints && S.jointsTop
+    });
     $("zoomLevel").textContent = Math.round(view.z * 100) + " %";
     $("zoomOut").disabled = view.z <= 1.001; $("zoomIn").disabled = view.z >= view.maxZ - 0.001; $("zoomFit").disabled = view.z <= 1.001;
   }
@@ -449,7 +611,7 @@
     const round = S.mode === "flat" && (S.part === "round" || S.part === "roundtile");
     $("optimize").checked = S.optimize && !round; $("optimize").disabled = round;
     $("optimize").nextElementSibling.textContent = S.mode === "side" ? "Längere Platten (1×2 bis 1×8) verwenden, Fugen versetzt" : round ? "Runde Teile gibt es nur als 1×1" : "Größere Teile verwenden, wo die Farbe gleich bleibt";
-    $("jointsToggle").setAttribute("aria-pressed", S.joints ? "true" : "false");
+    syncOverlayUi(); updateProjLine();
     const sel = effectiveColors().length;
     $("maxColors").max = sel; $("maxColors").value = S.maxColors && S.maxColors < sel ? S.maxColors : sel;
     $("maxColorsOut").textContent = S.maxColors && S.maxColors < sel ? S.maxColors : "alle";
@@ -484,7 +646,17 @@
   $("optimize").addEventListener("change", (e) => { S.optimize = e.target.checked; invalidate(); save(); });
   $("maxColors").addEventListener("input", (e) => { const v = +e.target.value; S.maxColors = v >= effectiveColors().length ? 0 : v; $("maxColorsOut").textContent = S.maxColors || "alle"; invalidate(); save(); });
   $("dither").addEventListener("input", (e) => { S.dither = +e.target.value; $("ditherOut").textContent = S.dither ? S.dither + " %" : "aus"; invalidate(); save(); });
-  $("jointsToggle").addEventListener("click", () => { S.joints = !S.joints; $("jointsToggle").setAttribute("aria-pressed", S.joints ? "true" : "false"); drawPreview(); save(); });
+  $("jointsToggle").addEventListener("click", () => { S.joints = !S.joints; syncOverlayUi(); drawPreview(); save(); });
+  $("jointsTopToggle").addEventListener("click", () => { S.jointsTop = !S.jointsTop; syncOverlayUi(); drawPreview(); save(); });
+  $("overlay").addEventListener("input", (e) => { S.overlay = +e.target.value; syncOverlayUi(); drawPreview(); save(); });
+  function syncOverlayUi() {
+    $("jointsToggle").setAttribute("aria-pressed", S.joints ? "true" : "false");
+    $("jointsTopToggle").setAttribute("aria-pressed", S.jointsTop ? "true" : "false");
+    $("jointsTopToggle").hidden = !(S.overlay > 0);
+    $("jointsTopToggle").disabled = !S.joints;
+    $("overlay").value = S.overlay || 0;
+    $("overlayOut").textContent = S.overlay ? S.overlay + " %" : "aus";
+  }
 
   /* --- Von Hand ändern --- */
   function renderBrush() {
@@ -500,7 +672,6 @@
     st.editing = !st.editing; $("editToggle").setAttribute("aria-pressed", st.editing ? "true" : "false");
     $("editBar").hidden = !st.editing; $("board").classList.toggle("editing", st.editing);
     $("editToggle").textContent = st.editing ? "Fertig" : "Steine ändern";
-    $("toolHint").textContent = st.editing ? "Ein Finger malt, zwei Finger zoomen und verschieben" : "Ziehen verschiebt, zwei Finger zoomen";
     renderBrush();
   });
   $("pickBtn").addEventListener("click", () => { st.picking = !st.picking; $("pickBtn").setAttribute("aria-pressed", st.picking ? "true" : "false"); });
@@ -709,11 +880,7 @@
   $("aboutBtn").addEventListener("click", () => { $("menu").hidden = true; $("aboutDialog").hidden = false; $("aboutClose").focus(); });
   $("aboutClose").addEventListener("click", () => ($("aboutDialog").hidden = true));
   $("aboutDialog").addEventListener("click", (e) => { if (e.target === $("aboutDialog")) $("aboutDialog").hidden = true; });
-  $("newBtn").addEventListener("click", async () => {
-    $("menu").hidden = true;
-    S = structuredClone(DEFAULTS); st.img = null; st.imgUrl = null; st.edits = {}; st.editSig = ""; st.history = []; st.cellsKey = ""; M = null; dirty = true;
-    await KM.store.del("project"); applySettingsToInputs(); showTab("image");
-  });
+  $("newBtn").addEventListener("click", async () => { $("menu").hidden = true; await saveNow(); $("fileInput").click(); });
 
   function applySettingsToInputs() {
     ["brightness", "contrast", "saturation"].forEach((id) => { $(id).value = S.adj[id]; $(id + "Out").textContent = (S.adj[id] > 0 ? "+" : "") + S.adj[id]; });
@@ -725,18 +892,20 @@
 
   /* ---------- Start ---------- */
   (async function init() {
-    const p = await KM.store.get("project").catch(() => null);
-    if (p && p.settings) {
-      S = Object.assign(structuredClone(DEFAULTS), p.settings);
-      S.adj = Object.assign({ ...DEFAULTS.adj }, S.adj || {});
-      S.colors = (S.colors || []).filter((k) => C[k]);
-      if (!KM.SHAPES[S.shape]) S.shape = "rect";
-      st.edits = p.edits || {}; st.editSig = p.editSig || "";
-    }
     applySettingsToInputs(); setBarHeight();
-    if (p && p.imgUrl) {
-      try { await useImage(p.imgUrl, true); } catch (e) { st.img = null; }
+    // Übernahme aus der ersten Fassung (ein einziges gespeichertes Projekt)
+    const old = await KM.store.get("project").catch(() => null);
+    if (old && old.imgUrl && !(await KM.projects.list()).length) {
+      await KM.projects.create("Mein Mosaik", old.imgUrl, { settings: old.settings, edits: old.edits || {}, editSig: old.editSig || "" });
+      await KM.store.del("project");
     }
-    showTab(st.img ? S.tab || "mosaic" : "image");
+    const cur = await KM.projects.current().catch(() => null);
+    const list = await KM.projects.list();
+    const target = (cur && list.find((p) => p.id === cur.pid)) || list[0];
+    if (target) {
+      try { await openProject(target.id, cur && cur.pid === target.id ? cur.vid : null); return; } catch (e) { console.error(e); }
+    }
+    await updateProjLine();
+    showTab("image");
   })();
 })();

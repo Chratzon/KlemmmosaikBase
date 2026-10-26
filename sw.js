@@ -1,10 +1,10 @@
 /* KlemmmosaikBase Service Worker: App offline verfügbar machen.
    Bei Änderungen an Dateien VERSION hochzählen, damit Geräte die neue Fassung laden. */
-const VERSION = "kmb-1.1.0";
+const VERSION = "kmb-1.2.0";
 const EXTRA = "kmb-extern"; // Schriften
 const SHELL = [
   "./", "index.html", "manifest.webmanifest", "css/app.css",
-  "js/palette.js", "js/availability.js", "js/shapes.js", "js/mosaic.js", "js/store.js", "js/install.js", "js/render.js", "js/export.js", "js/app.js", "js/vendor/jspdf.umd.min.js",
+  "js/palette.js", "js/availability.js", "js/shapes.js", "js/mosaic.js", "js/store.js", "js/projects.js", "js/install.js", "js/render.js", "js/export.js", "js/app.js", "js/vendor/jspdf.umd.min.js",
   "icons/icon.svg", "icons/icon-192.png", "icons/icon-512.png"
 ];
 self.addEventListener("install", (e) => {

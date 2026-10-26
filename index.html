@@ -25,12 +25,14 @@
     </div>
     <div class="menu" id="menu" hidden>
       <button type="button" id="installBtn" hidden>Als App installieren</button>
-      <button type="button" id="newBtn">Neues Projekt</button>
+      <button type="button" id="newBtn">Neues Projekt mit anderem Bild</button>
+      <button type="button" id="projMenuBtn">Projekte und Versionen</button>
       <button type="button" id="aboutBtn">So funktioniert die Farbwahl</button>
     </div>
   </header>
 
   <main id="main">
+    <div class="proj-wrap"><button type="button" class="proj-line" id="projBtn" aria-haspopup="dialog"><span class="proj-label">Projekt</span><span class="proj-name" id="projName">Noch kein Projekt</span><span class="proj-ver" id="projVer"></span><span class="proj-open" aria-hidden="true">Projekte</span></button></div>
     <!-- 1 Bild -->
     <section class="page" id="page-image" data-page="image">
       <div class="empty" id="emptyState">
@@ -100,9 +102,11 @@
           <div class="tools">
             <button type="button" class="btn small" id="editToggle" aria-pressed="false">Steine ändern</button>
             <button type="button" class="btn small" id="jointsToggle" aria-pressed="true">Teilefugen</button>
-            <span class="tool-hint" id="toolHint">Zwei Finger: zoomen und verschieben</span>
+            <button type="button" class="btn small" id="jointsTopToggle" aria-pressed="false" title="Fugen über dem Originalbild zeigen">Fugen obenauf</button>
           </div>
+          <label class="ov" for="overlay"><span>Original</span><input type="range" id="overlay" min="0" max="100" value="0" aria-label="Deckkraft des Originalbilds"><output id="overlayOut">aus</output></label>
           <div class="edit-bar" id="editBar" hidden>
+            <span class="tool-hint" id="toolHint">Ein Finger malt, zwei Finger zoomen und verschieben</span>
             <div class="brush" id="brushSwatches" role="group" aria-label="Pinselfarbe"></div>
             <div class="row tight">
               <button type="button" class="btn small" id="pickBtn" aria-pressed="false">Pipette</button>
@@ -111,6 +115,12 @@
             </div>
           </div>
           <div class="warn" id="warn" hidden></div>
+        </div>
+
+        <div class="group">
+          <div class="label">Versionen dieses Bildes</div>
+          <div class="chips versions" id="versionChips" role="group" aria-label="Versionen"></div>
+          <p class="hint">Eine neue Version übernimmt alle Einstellungen und Handänderungen der aktuellen. Danach kannst du sie unabhängig verändern.</p>
         </div>
 
         <div class="group">
@@ -234,6 +244,15 @@
     </div>
   </div>
 
+  <div class="dialog sheet" id="projDialog" hidden role="dialog" aria-modal="true" aria-labelledby="projTitle">
+    <div class="dialog-card">
+      <div class="sheet-head"><h2 id="projTitle">Projekte</h2><button type="button" class="icon-btn" id="projClose" aria-label="Schließen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button></div>
+      <p class="hint">Jedes Projekt gehört zu einem Bild und kann mehrere Versionen haben. Alles wird automatisch auf diesem Gerät gespeichert.</p>
+      <div class="row tight"><label class="btn primary small" for="fileInput">Neues Projekt aus Bild</label><button type="button" class="btn small" id="projSample">Beispielprojekt</button></div>
+      <div id="projList" class="proj-list"></div>
+    </div>
+  </div>
+
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="js/palette.js"></script>
@@ -241,6 +260,7 @@
   <script src="js/shapes.js"></script>
   <script src="js/mosaic.js"></script>
   <script src="js/store.js"></script>
+  <script src="js/projects.js"></script>
   <script src="js/install.js"></script>
   <script src="js/render.js"></script>
   <script src="js/export.js"></script>

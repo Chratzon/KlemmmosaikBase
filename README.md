@@ -19,7 +19,9 @@ PWA, die aus einem Foto eine Mosaik-Vorlage für Klemmbausteine macht: Ausschnit
 - **Teileliste** mit LEGO- und BrickLink-Farbnummern, Teilenummern und einstellbarer Reserve.
 - **Bauanleitung Schritt für Schritt:** flach in 16×16-Abschnitten mit Farbsymbolen, stehend Lage für Lage von unten mit Plattenlängen.
 - **Exporte:** PDF-Anleitung, BrickLink-Wunschliste (XML), CSV.
-- **Offline nutzbar**, das aktuelle Projekt wird lokal gespeichert.
+- **Projekte und Versionen:** Jedes Bild ist ein Projekt mit beliebig vielen Versionen (Einstellungen und Handänderungen). Versionen lassen sich aus der aktuellen ableiten, umbenennen, wechseln und löschen. Alles wird automatisch auf dem Gerät gespeichert.
+- **Original überblenden:** Das Originalbild lässt sich mit einem Regler halbtransparent über die Vorschau legen. Die Teilefugen können dabei als oberste Ebene sichtbar bleiben.
+- **Offline nutzbar.**
 
 ## So wird die Farbe eines Steins bestimmt
 
@@ -48,6 +50,7 @@ js/render.js          Zeichnen auf Canvas
 js/export.js          CSV, BrickLink-XML, PDF
 js/app.js             Ablauf und Bedienung
 js/store.js           Speichern in IndexedDB
+js/projects.js        Projekte und Versionen
 js/install.js         Installation als App, Service Worker
 js/vendor/            jsPDF 2.5.1 (MIT-Lizenz)
 sw.js                 Offline-Cache

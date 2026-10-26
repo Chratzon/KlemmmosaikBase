@@ -1,6 +1,6 @@
 /* KlemmmosaikBase Service Worker: App offline verfügbar machen.
    Bei Änderungen an Dateien VERSION hochzählen, damit Geräte die neue Fassung laden. */
-const VERSION = "kmb-1.2.0";
+const VERSION = "kmb-1.2.1";
 const EXTRA = "kmb-extern"; // Schriften
 const SHELL = [
   "./", "index.html", "manifest.webmanifest", "css/app.css",

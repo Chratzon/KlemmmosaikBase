@@ -236,3 +236,12 @@ em.rare { font-style: normal; color: #B35A00; font-weight: 600; }
 .btn.danger.confirm { background: #B3261E; border-color: #B3261E; color: #fff; }
 @media (prefers-color-scheme: dark) { .btn.danger { color: #FF8A80; } .btn.danger.confirm { color: #fff; } }
 input.rename { min-height: 36px; padding: 0 8px; border: 1px solid var(--accent); border-radius: 8px; background: var(--panel); width: 100%; max-width: 260px; }
+
+/* Grid-Spalten dürfen nicht über die Bildschirmbreite wachsen (z. B. durch die Pinselleiste) */
+body { overflow-x: clip; }
+.page, .has-img, .preview, .edit-bar, .group, .proj, .proj-list, .dialog-card { grid-template-columns: minmax(0, 1fr); }
+.page > *, .has-img > *, .preview > *, .edit-bar > *, .group > * { min-width: 0; }
+/* Die unsichtbaren Beschriftungen der Pinselfarben bleiben im Scrollbereich der Leiste */
+.brush { position: relative; }
+.brush button { position: relative; }
+.sr { top: 0; left: 0; }

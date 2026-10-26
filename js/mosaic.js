@@ -63,7 +63,9 @@
 
   /* ---------- Rasterung ---------- */
   /* Liefert pro Zelle die mittlere Farbe in linearem RGB (Float32Array, 3 Werte je Zelle). */
-  function sampleGrid(source, crop, cols, rows, adj) {
+  /* maskPath(ctx, W, H): zeichnet die Form des Ausschnitts als Pfad. Felder, die weniger als zur Hälfte
+     in der Form liegen, bleiben leer. Ohne maskPath ist der ganze Ausschnitt belegt. */
+  function sampleGrid(source, crop, cols, rows, adj, maskPath) {
     const s = Math.max(2, Math.min(8, Math.floor(1400 / Math.max(cols, rows))));
     const W = cols * s, H = rows * s;
     const cv = document.createElement("canvas"); cv.width = W; cv.height = H;
@@ -95,7 +97,20 @@
       const o = (cy * cols + cx) * 3;
       out[o] = R / n; out[o + 1] = G / n; out[o + 2] = B / n;
     }
-    return out;
+    let mask = null;
+    if (maskPath) {
+      const mc = document.createElement("canvas"); mc.width = W; mc.height = H;
+      const m = mc.getContext("2d", { willReadFrequently: true });
+      m.fillStyle = "#000"; maskPath(m, W, H); m.fill();
+      const md = m.getImageData(0, 0, W, H).data;
+      mask = new Uint8Array(cols * rows);
+      for (let cy = 0; cy < rows; cy++) for (let cx = 0; cx < cols; cx++) {
+        let a = 0;
+        for (let yy = 0; yy < s; yy++) { let i = ((cy * s + yy) * W + cx * s) * 4 + 3; for (let xx = 0; xx < s; xx++, i += 4) a += md[i]; }
+        mask[cy * cols + cx] = a / (n * 255) >= 0.5 ? 1 : 0;
+      }
+    }
+    return { cells: out, mask };
   }
 
   /* ---------- Farbzuordnung ---------- */
@@ -142,12 +157,13 @@
   }
 
   /* Farbanzahl begrenzen: nacheinander die Farbe entfernen, deren Wegfall den kleinsten Gesamtfehler erzeugt. */
-  function limitColors(cells, cols, rows, pal, maxN) {
+  function limitColors(cells, cols, rows, pal, maxN, mask) {
     if (!maxN || pal.length <= maxN) return pal;
     const N = cols * rows;
     // Zellen auf Farbgruppen reduzieren (gleiche Farbe = gleiche Zeile der Matrix)
     const groups = new Map();
     for (let i = 0; i < N; i++) {
+      if (mask && !mask[i]) continue;
       const key = (Math.round(cells[i * 3] * 63) << 12) | (Math.round(cells[i * 3 + 1] * 63) << 6) | Math.round(cells[i * 3 + 2] * 63);
       const g = groups.get(key); if (g) g.n++; else groups.set(key, { n: 1, key });
     }
@@ -171,16 +187,23 @@
   /* ---------- Teile zusammenfassen ---------- */
   /* Flach: von links oben nach rechts unten das größte passende Rechteck gleicher Farbe setzen. */
   /* block: Teile überschreiten keine Grundplatten-Grenze (alle 16 Noppen), damit jeder Abschnitt einzeln gebaut werden kann. */
-  function optimizeFlat(keys, cols, rows, shapes, block) {
+  /* shapesOf(farbe) liefert die Teile, die es in dieser Farbe gibt. Leere Felder (null) bleiben frei. */
+  function optimizeFlat(keys, cols, rows, shapesOf, block) {
     block = block || 16;
     const used = new Uint8Array(cols * rows), pieces = [];
-    const opts = [];
-    shapes.forEach((s) => { opts.push({ w: s.w, h: s.h, s }); if (s.w !== s.h) opts.push({ w: s.h, h: s.w, s }); });
-    opts.sort((a, b) => b.w * b.h - a.w * a.h || b.w - a.w);
+    const optsCache = new Map();
+    const optsFor = (k) => {
+      if (optsCache.has(k)) return optsCache.get(k);
+      const opts = [];
+      shapesOf(k).forEach((s) => { opts.push({ w: s.w, h: s.h, s }); if (s.w !== s.h) opts.push({ w: s.h, h: s.w, s }); });
+      opts.sort((a, b) => b.w * b.h - a.w * a.h || b.w - a.w);
+      optsCache.set(k, opts); return opts;
+    };
     for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
       const i = y * cols + x; if (used[i]) continue;
       const k = keys[i];
-      for (const o of opts) {
+      if (k == null) continue;
+      for (const o of optsFor(k)) {
         if (x + o.w > cols || y + o.h > rows) continue;
         if ((x % block) + o.w > block || (y % block) + o.h > block) continue;
         let ok = true;
@@ -195,9 +218,7 @@
   }
 
   /* Stehend: jede Lage (von unten) in Platten 1×N teilen. Stoßfugen möglichst nicht über einer Fuge der Lage darunter. */
-  function optimizeSide(keys, cols, rows, shapes) {
-    const lens = shapes.map((s) => s.w).sort((a, b) => b - a);
-    const byLen = Object.fromEntries(shapes.map((s) => [s.w, s]));
+  function optimizeSide(keys, cols, rows, shapesOf) {
     const pieces = [];
     let below = new Set();
     for (let y = rows - 1; y >= 0; y--) {
@@ -206,6 +227,9 @@
       while (x < cols) {
         const k = keys[y * cols + x];
         let end = x; while (end < cols && keys[y * cols + end] === k) end++;
+        if (k == null) { joints.add(x); joints.add(end); x = end; continue; }
+        const shapes = shapesOf(k), lens = shapes.map((s) => s.w).sort((a, b) => b - a);
+        const byLen = Object.fromEntries(shapes.map((s) => [s.w, s]));
         let p = x;
         while (p < end) {
           const rest = end - p;
@@ -213,21 +237,34 @@
           for (const L of lens) {
             if (L > rest) continue;
             const j = p + L;
-            if (j === end || j === cols || !below.has(j)) {
-              // keinen Rest von genau 0 < r erzwingen, der nur noch mit Fugenkonflikt lösbar ist – einfache Heuristik reicht
-              pick = L; break;
-            }
+            if (j === end || !below.has(j)) { pick = L; break; }
           }
           if (pick === null) pick = lens.find((L) => L <= rest);
           pieces.push({ x: p, y, w: pick, h: 1, key: k, part: byLen[pick] });
           p += pick;
-          if (p < cols) joints.add(p);
+          joints.add(p);
         }
         x = end;
       }
       below = joints;
     }
     return pieces;
+  }
+
+  /* Stehend: wie viele Teilstücke hängen nicht miteinander zusammen? Platten verbinden sich nur mit
+     Platten direkt darüber oder darunter, die sich mindestens eine Noppe überlappen. */
+  function sideComponents(pieces, rows) {
+    const byRow = Array.from({ length: rows }, () => []);
+    pieces.forEach((p, i) => byRow[p.y].push(i));
+    const parent = pieces.map((_, i) => i);
+    const find = (i) => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+    for (let y = 0; y < rows - 1; y++) {
+      for (const a of byRow[y]) for (const b of byRow[y + 1]) {
+        const A = pieces[a], B = pieces[b];
+        if (A.x < B.x + B.w && B.x < A.x + A.w) parent[find(a)] = find(b);
+      }
+    }
+    return new Set(pieces.map((_, i) => find(i))).size;
   }
 
   function countParts(pieces) {
@@ -239,5 +276,5 @@
     return [...m.values()];
   }
 
-  KM.engine = { LIN, toSrgb, linToLab, deltaE2000, hexToRgb, buildPalette, sampleGrid, quantize, limitColors, optimizeFlat, optimizeSide, countParts };
+  KM.engine = { LIN, toSrgb, linToLab, deltaE2000, hexToRgb, buildPalette, sampleGrid, quantize, limitColors, optimizeFlat, optimizeSide, sideComponents, countParts };
 })();

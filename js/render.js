@@ -1,7 +1,7 @@
 /* KlemmmosaikBase – Mosaik auf Canvas zeichnen */
 (function () {
   "use strict";
-  const BASE = "#262B31";
+  const BASE = "#262B31", OUT = "#171A1E";
 
   function lum(hex) { const [r, g, b] = KM.engine.hexToRgb(hex); return 0.299 * r + 0.587 * g + 0.114 * b; }
   function shade(hex, f) {
@@ -14,32 +14,60 @@
     ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
   }
 
-  /* model: { cols, rows, mode, part, keys, pieces }
-     opts:  { width (CSS px), region {x,y,w,h} in Zellen, joints, highlight {x,y,w,h}, labels: 'symbol'|'length'|null, symbols: {key: 'A'} } */
+  /* model: { cols, rows, mode, part, keys (null = leer), pieces }
+     opts:
+       width/maxHeight + region {x,y,w,h}  – Ausschnitt in Zellen, Canvas passt sich an
+       view {W, H, scale, ox, oy}          – fester Canvas, Zoom/Verschiebung (scale = Zellbreite in px)
+       joints, highlight {x,y,w,h}, labels: 'symbol'|'length'|null, symbols, sections, aspect */
   function draw(canvas, model, opts) {
-    const reg = opts.region || { x: 0, y: 0, w: model.cols, h: model.rows };
     const aspect = opts.aspect || (model.mode === "side" ? KM.PLATE_MM / KM.STUD_MM : 1);
-    let cw = opts.width / reg.w;
-    if (opts.maxHeight) cw = Math.min(cw, opts.maxHeight / (reg.h * aspect));
-    const ch = cw * aspect;
-    const W = Math.max(1, Math.round(cw * reg.w)), H = Math.max(1, Math.round(ch * reg.h));
+    let W, H, cw, ch, ox, oy, reg;
+    if (opts.view) {
+      const v = opts.view;
+      W = v.W; H = v.H; cw = v.scale; ch = cw * aspect; ox = v.ox; oy = v.oy;
+      const x0 = Math.max(0, Math.floor(-ox / cw)), y0 = Math.max(0, Math.floor(-oy / ch));
+      const x1 = Math.min(model.cols, Math.ceil((W - ox) / cw)), y1 = Math.min(model.rows, Math.ceil((H - oy) / ch));
+      reg = { x: x0, y: y0, w: Math.max(0, x1 - x0), h: Math.max(0, y1 - y0) };
+    } else {
+      reg = opts.region || { x: 0, y: 0, w: model.cols, h: model.rows };
+      cw = opts.width / reg.w;
+      if (opts.maxHeight) cw = Math.min(cw, opts.maxHeight / (reg.h * aspect));
+      ch = cw * aspect;
+      W = Math.max(1, Math.round(cw * reg.w)); H = Math.max(1, Math.round(ch * reg.h));
+      ox = -reg.x * cw; oy = -reg.y * ch;
+    }
     const dpr = Math.min(window.devicePixelRatio || 1, 3);
-    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    const cwPx = Math.round(W * dpr), chPx = Math.round(H * dpr);
+    if (canvas.width !== cwPx || canvas.height !== chPx) { canvas.width = cwPx; canvas.height = chPx; }
     canvas.style.width = W + "px"; canvas.style.height = H + "px";
     const ctx = canvas.getContext("2d");
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = BASE; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = OUT; ctx.fillRect(0, 0, W, H);
+    const px = (x) => ox + x * cw, py = (y) => oy + y * ch;
+    ctx.fillStyle = BASE; ctx.fillRect(px(0), py(0), model.cols * cw, model.rows * ch);
 
     const C = KM.COLOR_BY_KEY;
-    const px = (x) => (x - reg.x) * cw, py = (y) => (y - reg.y) * ch;
     const inReg = (p) => p.x + p.w > reg.x && p.x < reg.x + reg.w && p.y + p.h > reg.y && p.y < reg.y + reg.h;
     const round = model.mode === "flat" && (model.part === "round" || model.part === "roundtile");
+    const keyAt = (x, y) => model.keys[y * model.cols + x];
+
+    // leere Felder: flach als freie Noppe der Grundplatte, stehend als Lücke
+    if (cw >= 5) {
+      ctx.strokeStyle = "rgba(255,255,255,.07)"; ctx.lineWidth = 1;
+      for (let y = reg.y; y < reg.y + reg.h; y++) for (let x = reg.x; x < reg.x + reg.w; x++) {
+        if (keyAt(x, y) != null) continue;
+        if (model.mode === "flat") { ctx.beginPath(); ctx.arc(px(x) + cw / 2, py(y) + ch / 2, cw * 0.3, 0, Math.PI * 2); ctx.stroke(); }
+        else { ctx.fillStyle = OUT; ctx.fillRect(px(x), py(y), cw + 0.5, ch + 0.5); }
+      }
+    } else if (model.mode === "side") {
+      ctx.fillStyle = OUT;
+      for (let y = reg.y; y < reg.y + reg.h; y++) for (let x = reg.x; x < reg.x + reg.w; x++) if (keyAt(x, y) == null) ctx.fillRect(px(x), py(y), cw + 0.5, ch + 0.5);
+    }
 
     if (!opts.joints) {
-      // reines Bild ohne Teilefugen
       for (let y = reg.y; y < reg.y + reg.h; y++) for (let x = reg.x; x < reg.x + reg.w; x++) {
-        const hex = C[model.keys[y * model.cols + x]].hex;
-        ctx.fillStyle = hex;
+        const k = keyAt(x, y); if (k == null) continue;
+        ctx.fillStyle = C[k].hex;
         if (round) { ctx.beginPath(); ctx.arc(px(x) + cw / 2, py(y) + ch / 2, cw * 0.47, 0, Math.PI * 2); ctx.fill(); }
         else ctx.fillRect(px(x), py(y), cw + 0.5, ch + 0.5);
       }
@@ -70,7 +98,6 @@
       }
     }
 
-    // Beschriftung
     if (opts.labels) {
       const fs = Math.min(cw, ch) * (opts.labels === "length" ? 0.72 : 0.55);
       if (fs >= 6) {
@@ -85,7 +112,8 @@
           }
         } else {
           for (let y = reg.y; y < reg.y + reg.h; y++) for (let x = reg.x; x < reg.x + reg.w; x++) {
-            const k = model.keys[y * model.cols + x], hex = C[k].hex;
+            const k = keyAt(x, y); if (k == null) continue;
+            const hex = C[k].hex;
             ctx.fillStyle = lum(hex) > 140 ? "rgba(0,0,0,.72)" : "rgba(255,255,255,.88)";
             ctx.fillText(opts.symbols[k] || "", px(x) + cw / 2, py(y) + ch / 2 + 0.5);
           }
@@ -93,20 +121,18 @@
       }
     }
 
-    // Hervorhebung
     if (opts.highlight) {
       const h = opts.highlight;
       ctx.fillStyle = "rgba(10,14,18,.62)";
       ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.rect(px(h.x), py(h.y), h.w * cw, h.h * ch); ctx.fill("evenodd");
       ctx.strokeStyle = "#FFD23F"; ctx.lineWidth = 2; ctx.strokeRect(px(h.x) + 1, py(h.y) + 1, h.w * cw - 2, h.h * ch - 2);
     }
-    // Raster alle 16 Noppen (Grundplatten-Abschnitte) in der flachen Bauweise
     if (opts.sections && model.mode === "flat") {
       ctx.strokeStyle = "rgba(255,210,63,.55)"; ctx.lineWidth = 1;
-      for (let x = 16; x < model.cols; x += 16) { ctx.beginPath(); ctx.moveTo(px(x), 0); ctx.lineTo(px(x), H); ctx.stroke(); }
-      for (let y = 16; y < model.rows; y += 16) { ctx.beginPath(); ctx.moveTo(0, py(y)); ctx.lineTo(W, py(y)); ctx.stroke(); }
+      for (let x = 16; x < model.cols; x += 16) { ctx.beginPath(); ctx.moveTo(px(x), py(0)); ctx.lineTo(px(x), py(model.rows)); ctx.stroke(); }
+      for (let y = 16; y < model.rows; y += 16) { ctx.beginPath(); ctx.moveTo(px(0), py(y)); ctx.lineTo(px(model.cols), py(y)); ctx.stroke(); }
     }
-    return { cw, ch, reg };
+    return { cw, ch, ox, oy, reg, W, H };
   }
 
   KM.render = { draw, lum };

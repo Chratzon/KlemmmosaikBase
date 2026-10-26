@@ -44,10 +44,23 @@
       </div>
       <div id="cropArea" hidden>
         <div class="crop-wrap" id="cropWrap"><canvas id="cropCanvas"></canvas></div>
-        <p class="hint">Rahmen verschieben, an den Ecken die Größe ändern.</p>
+        <p class="hint" id="cropHint">Rahmen verschieben, an den Ecken die Größe ändern. Beim Ziehen zeigt eine Lupe die Stelle vergrößert.</p>
+        <div class="row tight" id="polyTools" hidden>
+          <button type="button" class="btn small" id="polyDelete">Gewählten Punkt löschen</button>
+          <button type="button" class="btn small" id="polyReset">Form neu beginnen</button>
+        </div>
         <div class="group">
+          <div class="label">Form</div>
+          <div class="shapes" id="shapeChips" role="group" aria-label="Form des Ausschnitts"></div>
+          <div class="outside" id="outsideRow" hidden>
+            <label for="outsideSelect">Außerhalb der Form</label>
+            <select id="outsideSelect"></select>
+          </div>
+        </div>
+        <div class="group" id="aspectGroup">
           <div class="label">Seitenverhältnis</div>
           <div class="chips" id="aspectChips" role="group" aria-label="Seitenverhältnis">
+            <button type="button" data-a="shape" id="aspectShape">Form</button>
             <button type="button" data-a="1:1">1:1</button>
             <button type="button" data-a="4:3">4:3</button>
             <button type="button" data-a="3:4">3:4</button>
@@ -74,19 +87,30 @@
     <section class="page" id="page-mosaic" data-page="mosaic" hidden>
       <div class="need-img" hidden><p>Noch kein Bild gewählt.</p><button type="button" class="btn primary" data-goto="image">Bild wählen</button></div>
       <div class="has-img">
-        <div class="stats" id="stats"></div>
-        <div class="board" id="board"><canvas id="mosaicCanvas"></canvas></div>
-        <div class="edit-bar" id="editBar" hidden>
-          <div class="brush" id="brushSwatches" role="group" aria-label="Pinselfarbe"></div>
-          <div class="row tight">
-            <button type="button" class="btn small" id="pickBtn" aria-pressed="false">Pipette</button>
-            <button type="button" class="btn small" id="undoBtn">Rückgängig</button>
-            <button type="button" class="btn small" id="clearEditsBtn">Alle Änderungen verwerfen</button>
+        <div class="preview" id="preview">
+          <div class="stats" id="stats"></div>
+          <div class="board viewport" id="board"><canvas id="mosaicCanvas"></canvas>
+            <div class="zoom" role="group" aria-label="Zoom">
+              <button type="button" id="zoomOut" aria-label="Verkleinern">−</button>
+              <span id="zoomLevel" class="zlevel" aria-live="polite"></span>
+              <button type="button" id="zoomIn" aria-label="Vergrößern">+</button>
+              <button type="button" id="zoomFit" aria-label="Ganzes Bild zeigen">Ganz</button>
+            </div>
           </div>
-        </div>
-        <div class="row tight">
-          <button type="button" class="btn small" id="editToggle" aria-pressed="false">Einzelne Steine ändern</button>
-          <button type="button" class="btn small" id="jointsToggle" aria-pressed="true">Teilefugen zeigen</button>
+          <div class="tools">
+            <button type="button" class="btn small" id="editToggle" aria-pressed="false">Steine ändern</button>
+            <button type="button" class="btn small" id="jointsToggle" aria-pressed="true">Teilefugen</button>
+            <span class="tool-hint" id="toolHint">Zwei Finger: zoomen und verschieben</span>
+          </div>
+          <div class="edit-bar" id="editBar" hidden>
+            <div class="brush" id="brushSwatches" role="group" aria-label="Pinselfarbe"></div>
+            <div class="row tight">
+              <button type="button" class="btn small" id="pickBtn" aria-pressed="false">Pipette</button>
+              <button type="button" class="btn small" id="undoBtn">Rückgängig</button>
+              <button type="button" class="btn small" id="clearEditsBtn">Alle verwerfen</button>
+            </div>
+          </div>
+          <div class="warn" id="warn" hidden></div>
         </div>
 
         <div class="group">
@@ -128,6 +152,7 @@
           <label class="slider" for="maxColors"><span>Höchstens</span><input type="range" id="maxColors" min="2" max="41" value="41"><output id="maxColorsOut">alle</output></label>
           <label class="slider" for="dither"><span>Farbmischung</span><input type="range" id="dither" min="0" max="100" value="0"><output id="ditherOut">aus</output></label>
           <p class="hint">Farbmischung streut Farbunterschiede auf Nachbarsteine. Verläufe werden weicher, Flächen unruhiger.</p>
+          <p class="hint" id="availHint"></p>
           <div class="row tight">
             <button type="button" class="btn small" id="palBasic">Gängige Farben</button>
             <button type="button" class="btn small" id="palAll">Alle</button>
@@ -212,6 +237,8 @@
   <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
   <script src="js/palette.js"></script>
+  <script src="js/availability.js"></script>
+  <script src="js/shapes.js"></script>
   <script src="js/mosaic.js"></script>
   <script src="js/store.js"></script>
   <script src="js/install.js"></script>

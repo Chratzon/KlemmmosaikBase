@@ -44,10 +44,11 @@
     doc.setFont("helvetica", "normal"); doc.setFontSize(11);
     doc.text(sizeTxt, MG, 34);
     doc.text(`${o.mode === "side" ? "Stehend gebaut" : "Flach gebaut"} · ${o.partLabel} · ${M.pieces.length} Teile · ${M.usedKeys.length} Farben`, MG, 40);
+    if (o.groups > 1) { doc.setTextColor(170, 60, 0); doc.text(`Achtung: ${o.groups} getrennte Teilstücke, Rückwand oder Trägerplatte nötig.`, MG, 45); doc.setTextColor(0); }
     const img = new Image(); img.src = o.preview; await img.decode().catch(() => {});
     const maxW = PW - 2 * MG, maxH = 150, k = Math.min(maxW / img.width, maxH / img.height);
-    doc.addImage(o.preview, "PNG", MG + (maxW - img.width * k) / 2, 48, img.width * k, img.height * k);
-    let y = 48 + img.height * k + 10;
+    doc.addImage(o.preview, "PNG", MG + (maxW - img.width * k) / 2, 50, img.width * k, img.height * k);
+    let y = 50 + img.height * k + 10;
     doc.setFont("helvetica", "bold"); doc.setFontSize(12); doc.text("Farben", MG, y); y += 6;
     doc.setFontSize(9);
     const colW = (PW - 2 * MG) / 3;
@@ -64,7 +65,7 @@
     doc.addPage(); page++;
     doc.setFont("helvetica", "bold"); doc.setFontSize(16); doc.text("Teileliste", MG, 22);
     doc.setFontSize(9); doc.setFont("helvetica", "normal");
-    doc.text(`Mit ${o.reserve} % Reserve. Farbnummern nach LEGO und BrickLink.`, MG, 28);
+    doc.text(`Mit ${o.reserve} % Reserve. Farbnummern nach LEGO und BrickLink. * = selten, nur in wenigen Sets verbaut.`, MG, 28);
     y = 38;
     const cols = [MG, MG + 8, MG + 60, MG + 82, MG + 104, MG + 140, MG + 160];
     const head = () => {
@@ -78,7 +79,7 @@
       if (y > PH - 20) { footer(page); doc.addPage(); page++; y = 22; head(); }
       doc.setFillColor(...rgb(r.c.hex)); doc.setDrawColor(150); doc.rect(cols[0], y - 3.6, 4.5, 4.5, "FD");
       doc.text(`${r.sym}  ${r.c.de}`, cols[1], y); doc.text(String(r.c.lego), cols[2], y); doc.text(String(r.c.bl), cols[3], y);
-      doc.text(r.part.name, cols[4], y); doc.text(r.part.id, cols[5], y); doc.text(String(r.nr), cols[6], y);
+      doc.text(r.part.name + (r.rare ? " *" : ""), cols[4], y); doc.text(r.part.id, cols[5], y); doc.text(String(r.nr), cols[6], y);
       total += r.nr; y += 6;
     });
     doc.setFont("helvetica", "bold"); doc.line(MG, y - 3, PW - MG, y - 3); doc.text("Gesamt", cols[1], y + 2); doc.text(String(total), cols[6], y + 2);
@@ -127,7 +128,9 @@
         const size = PW - 2 * MG, cs = size / 16, top = 52;
         doc.setFillColor(38, 43, 49); doc.rect(MG, top, r.w * cs, r.h * cs, "F");
         for (let yy = 0; yy < r.h; yy++) for (let xx = 0; xx < r.w; xx++) {
-          const key = M.keys[(r.y + yy) * M.cols + (r.x + xx)], c = C[key];
+          const key = M.keys[(r.y + yy) * M.cols + (r.x + xx)];
+          if (key == null) continue;
+          const c = C[key];
           const x = MG + xx * cs, yv = top + yy * cs;
           doc.setFillColor(...rgb(c.hex));
           if (M.part === "round" || M.part === "roundtile") doc.circle(x + cs / 2, yv + cs / 2, cs * 0.46, "F");
